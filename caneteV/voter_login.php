@@ -1,83 +1,65 @@
 <?php
 session_start();
-require_once "db.php";
+require "db.php";
 
 $error = "";
 
 if ($_SERVER["REQUEST_METHOD"] == "POST") {
-    $voter_id = $_POST["voter_id"];
-    $password = $_POST["password"];
+    $id = $_POST["voter_id"];
+    $pw = $_POST["password"];
 
-    $stmt = $conn->prepare("SELECT * FROM voters WHERE voter_id = ? AND password = ? AND status = 1");
-    $stmt->bind_param("ss", $voter_id, $password);
+    $stmt = $conn->prepare("SELECT * FROM voters WHERE voter_id=? AND password=? AND status=1");
+    $stmt->bind_param("ss", $id, $pw);
     $stmt->execute();
-    $result = $stmt->get_result();
-    $voter = $result->fetch_assoc();
+    $v = $stmt->get_result()->fetch_assoc();
 
-    if ($voter) {
-        if ($voter["voted"]) {
-            $error = "You already voted.";
-        } else {
-            $_SESSION["voter"] = $voter;
+    if ($v) {
+        if ($v["voted"]) $error = "You already voted.";
+        else {
+            $_SESSION["voter"] = $v;
             header("Location: voter_vote.php");
             exit;
         }
     } else {
-        $error = "Invalid credentials or inactive voter.";
+        $error = "Invalid login.";
     }
 }
 ?>
 <!DOCTYPE html>
 <html>
 <head>
-    <meta charset="UTF-8">
-    <title>Voter Login</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            background: #f4f6f9;
-            margin: 0;
-        }
-        .box {
-            max-width: 400px;
-            margin: 80px auto;
-            background: white;
-            padding: 20px;
-            box-shadow: 0 0 5px rgba(0,0,0,0.15);
-            border-radius: 4px;
-        }
-        h2 { text-align: center; }
-        label { display: block; font-weight: bold; margin-bottom: 5px; }
-        input[type="text"], input[type="password"] {
-            width: 100%;
-            padding: 8px;
-            margin-bottom: 10px;
-        }
-        button {
-            width: 100%;
-            padding: 8px;
-            background: #3498db;
-            color: white;
-            border: none;
-            border-radius: 3px;
-            cursor: pointer;
-        }
-        .error { color: red; margin-bottom: 10px; text-align: center; }
-    </style>
+<title>Voter Login</title>
+<style>
+body { font-family: Arial; text-align: center; padding-top: 40px; }
+table { margin: auto; border-collapse: collapse; }
+td { border: 1px solid black; padding: 5px; }
+input { width: 150px; }
+a, button { margin-top: 10px; display: inline-block; border: 1px solid black; padding: 5px 10px; background: white; cursor: pointer; text-decoration: none; }
+</style>
 </head>
 <body>
-<div class="box">
-    <h2>Voter Login</h2>
-    <?php if ($error): ?>
-        <div class="error"><?php echo htmlspecialchars($error); ?></div>
-    <?php endif; ?>
-    <form method="post">
-        <label>Voter ID</label>
-        <input type="text" name="voter_id" required>
-        <label>Password</label>
-        <input type="password" name="password" required>
-        <button type="submit">Login and Vote</button>
-    </form>
-</div>
+
+<h3>Voter Login</h3>
+
+<?php if ($error != "") echo "<p><b>".$error."</b></p>"; ?>
+
+<form method="post">
+<table>
+<tr>
+    <td><b>Voter ID</b></td>
+    <td><input type="text" name="voter_id" required></td>
+</tr>
+<tr>
+    <td><b>Password</b></td>
+    <td><input type="password" name="password" required></td>
+</tr>
+</table>
+<br>
+<button type="submit">Login</button>
+</form>
+
+<br>
+<a href="index.php">Back to Dashboard</a>
+
 </body>
 </html>

@@ -1,115 +1,66 @@
 <?php
-error_reporting(E_ALL);
-ini_set('display_errors', 1);
+require "db.php";
 
-require_once "db.php";
-
-// get all active positions
 $positions = [];
-$posRes = $conn->query("SELECT * FROM positions WHERE status = 1 ORDER BY id");
-while ($p = $posRes->fetch_assoc()) {
-    $positions[$p["id"]] = $p;
-}
+$pos = $conn->query("SELECT * FROM positions WHERE status=1 ORDER BY id");
+while($p = $pos->fetch_assoc()) $positions[$p["id"]] = $p;
 
-// compute vote counts
 $res = $conn->query("
-    SELECT 
-        c.id AS candidate_id,
-        c.full_name,
-        c.position_id,
-        p.name AS position_name,
-        p.max_seats,
-        COUNT(v.id) AS total_votes
-    FROM candidates c
-    JOIN positions p ON c.position_id = p.id
-    LEFT JOIN votes v ON v.candidate_id = c.id
-    WHERE c.status = 1
-    GROUP BY c.id, c.full_name, c.position_id, p.name, p.max_seats
-    ORDER BY p.id, total_votes DESC
+SELECT c.id, c.full_name, c.position_id,
+p.name AS position_name, p.max_seats,
+COUNT(v.id) AS votes
+FROM candidates c
+JOIN positions p ON c.position_id=p.id
+LEFT JOIN votes v ON v.candidate_id=c.id
+WHERE c.status=1
+GROUP BY c.id
+ORDER BY p.id, votes DESC
 ");
 
 $grouped = [];
-
-// group candidates per position
-while ($row = $res->fetch_assoc()) {
-    $pid = $row["position_id"];
-    if (!isset($grouped[$pid])) {
-        $grouped[$pid] = [];
-    }
-    $grouped[$pid][] = $row;
+while($r = $res->fetch_assoc()){
+    $grouped[$r["position_id"]][] = $r;
 }
 ?>
 <!DOCTYPE html>
 <html>
 <head>
-    <meta charset="UTF-8">
-    <title>Election Winners</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            background: #f4f6f9;
-            margin: 0;
-        }
-        .topbar {
-            background: #2c3e50;
-            color: white;
-            padding: 15px;
-            text-align: center;
-        }
-        .container {
-            max-width: 900px;
-            margin: 20px auto;
-            background: white;
-            padding: 20px;
-            box-shadow: 0 0 5px rgba(0,0,0,0.15);
-        }
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            font-size: 14px;
-        }
-        th, td {
-            padding: 8px;
-            border: 1px solid #ddd;
-        }
-        th { background: #ecf0f1; }
-    </style>
+<title>Winners</title>
+<style>
+body{font-family:Arial;text-align:center}
+table{margin:auto;border-collapse:collapse}
+td,th{border:1px solid black;padding:5px}
+</style>
 </head>
 <body>
 
-<div class="topbar">
-    <h2>Election Winners</h2>
-</div>
-
-<div class="container">
+<h3>Election Winners</h3>
 
 <table>
+<tr>
+<th>Position</th>
+<th>Winner</th>
+<th>Votes</th>
+</tr>
+
+<?php foreach($grouped as $pid=>$list): ?>
+    <?php
+    $max = $positions[$pid]["max_seats"];
+    $win = array_slice($list,0,$max);
+    ?>
+    <?php foreach($win as $w): ?>
     <tr>
-        <th>Elective Position</th>
-        <th>Winner</th>
-        <th>Total Votes</th>
+        <td><?php echo $positions[$pid]["name"]; ?></td>
+        <td><?php echo $w["full_name"]; ?></td>
+        <td><?php echo $w["votes"]; ?></td>
     </tr>
-
-    <?php foreach ($grouped as $pid => $candidates): ?>
-        <?php
-        $pos = $positions[$pid];
-        $maxSeats = (int)$pos["max_seats"];
-
-        // get only the top N winners
-        $winners = array_slice($candidates, 0, $maxSeats);
-        ?>
-        
-        <?php foreach ($winners as $winner): ?>
-        <tr>
-            <td><?php echo htmlspecialchars($pos["name"]); ?></td>
-            <td><?php echo htmlspecialchars($winner["full_name"]); ?></td>
-            <td><?php echo (int)$winner["total_votes"]; ?></td>
-        </tr>
-        <?php endforeach; ?>
     <?php endforeach; ?>
+<?php endforeach; ?>
 
 </table>
 
-</div>
+<br>
+<a href="index.php">Back</a>
+
 </body>
 </html>

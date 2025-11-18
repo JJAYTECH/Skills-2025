@@ -1,6 +1,6 @@
 <?php
 session_start();
-require_once "db.php";
+require "db.php";
 
 if (!isset($_SESSION["voter"])) {
     header("Location: voter_login.php");
@@ -11,6 +11,7 @@ $voter = $_SESSION["voter"];
 $message = "";
 $error = "";
 
+/* SUBMIT VOTE */
 if ($_SERVER["REQUEST_METHOD"] == "POST") {
 
     if ($voter["voted"]) {
@@ -20,47 +21,35 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
         $conn->begin_transaction();
 
         try {
-            // loop all positions
-            $posRes = $conn->query("SELECT * FROM positions WHERE status = 1");
-            while ($pos = $posRes->fetch_assoc()) {
-                $pid = $pos["id"];
-                $max = (int)$pos["max_seats"];
-                $fieldName = "position_" . $pid;
+            $posRes = $conn->query("SELECT * FROM positions WHERE status=1");
+            while ($p = $posRes->fetch_assoc()) {
 
-                if (!isset($_POST[$fieldName])) {
-                    continue;
-                }
+                $pid = $p["id"];
+                $max = (int)$p["max_seats"];
+                $name = "position_" . $pid;
 
-                $selectedCandidates = $_POST[$fieldName];
+                if (!isset($_POST[$name])) continue;
 
-                if (!is_array($selectedCandidates)) {
-                    $selectedCandidates = [$selectedCandidates];
-                }
+                $selected = $_POST[$name];
+                if (!is_array($selected)) $selected = [$selected];
 
-                if (count($selectedCandidates) > $max) {
-                    throw new Exception("Too many selected candidates for " . $pos["name"]);
-                }
+                if (count($selected) > $max)
+                    throw new Exception("Too many selections for " . $p["name"]);
 
-                foreach ($selectedCandidates as $cid) {
+                foreach ($selected as $cid) {
                     $cid = (int)$cid;
-                    $stmt = $conn->prepare(
-                        "INSERT INTO votes (voter_id, candidate_id, position_id) VALUES (?, ?, ?)"
-                    );
-                    $stmt->bind_param("iii", $voter["id"], $cid, $pid);
-                    $stmt->execute();
+                    $conn->query("INSERT INTO votes (voter_id, candidate_id, position_id)
+                                  VALUES (" . $voter["id"] . ", $cid, $pid)");
                 }
             }
 
-            // mark voter as voted
-            $conn->query("UPDATE voters SET voted = 1 WHERE id = " . (int)$voter["id"]);
-
+            $conn->query("UPDATE voters SET voted=1 WHERE id=" . $voter["id"]);
             $conn->commit();
 
-            // update session copy
             $_SESSION["voter"]["voted"] = 1;
             $voter["voted"] = 1;
-
             $message = "Thank you. Your vote has been recorded.";
+
         } catch (Exception $e) {
             $conn->rollback();
             $error = "Error: " . $e->getMessage();
@@ -68,134 +57,97 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
     }
 }
 
-// fetch positions and candidates for display
+/* LOAD POSITIONS AND CANDIDATES */
 $positions = [];
-$posRes = $conn->query("SELECT * FROM positions WHERE status = 1 ORDER BY id");
-while ($p = $posRes->fetch_assoc()) {
-    $positions[$p["id"]] = $p;
-}
+$res = $conn->query("SELECT * FROM positions WHERE status=1 ORDER BY id");
+while ($r = $res->fetch_assoc()) $positions[$r["id"]] = $r;
 
-$candidatesByPos = [];
+$candidates = [];
 if ($positions) {
-    $posIds = implode(",", array_keys($positions));
-    $res = $conn->query(
-        "SELECT c.*, p.name AS position_name 
-         FROM candidates c
-         JOIN positions p ON c.position_id = p.id
-         WHERE c.status = 1 AND c.position_id IN ($posIds)
-         ORDER BY p.id, c.full_name"
-    );
-    while ($row = $res->fetch_assoc()) {
-        $pid = $row["position_id"];
-        if (!isset($candidatesByPos[$pid])) {
-            $candidatesByPos[$pid] = [];
-        }
-        $candidatesByPos[$pid][] = $row;
+    $ids = implode(",", array_keys($positions));
+    $q = $conn->query("
+        SELECT c.*, p.name AS pos
+        FROM candidates c
+        JOIN positions p ON c.position_id=p.id
+        WHERE c.status=1 AND c.position_id IN ($ids)
+        ORDER BY p.id, c.full_name
+    ");
+
+    while ($c = $q->fetch_assoc()) {
+        $pid = $c["position_id"];
+        if (!isset($candidates[$pid])) $candidates[$pid] = [];
+        $candidates[$pid][] = $c;
     }
 }
 ?>
 <!DOCTYPE html>
 <html>
 <head>
-    <meta charset="UTF-8">
-    <title>Voting Page</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            background: #f4f6f9;
-            margin: 0;
-        }
-        .topbar {
-            background: #2c3e50;
-            color: white;
-            padding: 10px 20px;
-        }
-        .topbar span { font-size: 14px; }
-        .container {
-            max-width: 900px;
-            margin: 20px auto;
-            background: white;
-            padding: 20px;
-            box-shadow: 0 0 5px rgba(0,0,0,0.15);
-            border-radius: 4px;
-        }
-        h2 { margin-top: 0; }
-        fieldset {
-            margin-bottom: 15px;
-            border: 1px solid #ccc;
-        }
-        legend {
-            font-weight: bold;
-        }
-        .msg { padding: 8px; margin-bottom: 10px; border-radius: 3px; }
-        .msg-success { background: #d4efdf; color: #145a32; }
-        .msg-error { background: #f5b7b1; color: #7b241c; }
-        button {
-            padding: 8px 15px;
-            background: #3498db;
-            border: none;
-            color: white;
-            border-radius: 3px;
-            cursor: pointer;
-        }
-        .logout {
-            float: right;
-            color: #ecf0f1;
-            text-decoration: none;
-            font-size: 14px;
-        }
-    </style>
+<title>Vote</title>
+<style>
+body { font-family: Arial; text-align: center; }
+fieldset { margin: 10px auto; width: 60%; }
+legend { font-weight: bold; }
+.box { border: 1px solid black; padding: 8px; width: 60%; margin: auto; }
+</style>
 </head>
 <body>
-<div class="topbar">
-    <strong>Voter: <?php echo htmlspecialchars($voter["full_name"]); ?></strong>
-    <span> [ID: <?php echo htmlspecialchars($voter["voter_id"]); ?>]</span>
-    <a href="voter_logout.php" class="logout">Logout</a>
-</div>
 
-<div class="container">
-    <h2>Election Voting</h2>
+<p><b>Voter:</b> <?php echo $voter["full_name"]; ?>
+ (ID: <?php echo $voter["voter_id"]; ?>)
+ <a href="voter_logout.php">Logout</a>
+</p>
 
-    <?php if ($message): ?>
-        <div class="msg msg-success"><?php echo htmlspecialchars($message); ?></div>
-    <?php endif; ?>
+<h3><b>Election Voting</b></h3>
 
-    <?php if ($error): ?>
-        <div class="msg msg-error"><?php echo htmlspecialchars($error); ?></div>
-    <?php endif; ?>
+<?php if ($message): ?>
+    <div class="box"><?php echo $message; ?></div>
+<?php endif; ?>
 
-    <?php if ($voter["voted"]): ?>
-        <p>You already voted. Thank you.</p>
-    <?php else: ?>
-        <form method="post">
-            <?php foreach ($positions as $pid => $pos): ?>
-                <?php
-                $cands = isset($candidatesByPos[$pid]) ? $candidatesByPos[$pid] : [];
-                if (!$cands) continue;
-                ?>
-                <fieldset>
-                    <legend>
-                        <?php echo htmlspecialchars($pos["name"]); ?>
-                        (select up to <?php echo (int)$pos["max_seats"]; ?>)
-                    </legend>
-                    <?php foreach ($cands as $c): ?>
-                        <div>
-                            <label>
-                                <input type="checkbox"
-                                       name="position_<?php echo $pid; ?>[]"
-                                       value="<?php echo $c["id"]; ?>">
-                                <?php echo htmlspecialchars($c["full_name"]); ?>
-                                <?php if ($c["party"]): ?>
-                                    [<?php echo htmlspecialchars($c["party"]); ?>]
-                                <?php endif; ?>
-                            </label>
-                        </div>
-                    <?php endforeach; ?>
-                </fieldset>
-            <?php endforeach; ?>
-            <button type="submit">Submit Vote</button>
-        </form>
-    <?php endif; ?>
-</div>
+<?php if ($error): ?>
+    <div class="box"><?php echo $error; ?></div>
+<?php endif; ?>
+
+<?php if ($voter["voted"]): ?>
+
+<p>You already voted. Thank you.</p>
+
+<?php else: ?>
+
+<form method="post">
+
+<?php foreach ($positions as $pid => $pos): ?>
+    <?php if (!isset($candidates[$pid])) continue; ?>
+
+    <fieldset>
+        <legend>
+            <?php echo $pos["name"]; ?> (max <?php echo $pos["max_seats"]; ?>)
+        </legend>
+
+        <?php foreach ($candidates[$pid] as $c): ?>
+            <p>
+                <label>
+                    <input type="checkbox"
+                           name="position_<?php echo $pid; ?>[]"
+                           value="<?php echo $c["id"]; ?>">
+                    <?php echo $c["full_name"]; ?>
+                    <?php if ($c["party"]): ?>
+                        [<?php echo $c["party"]; ?>]
+                    <?php endif; ?>
+                </label>
+            </p>
+        <?php endforeach; ?>
+    </fieldset>
+
+<?php endforeach; ?>
+
+<p><button type="submit">Submit Vote</button></p>
+
+</form>
+
+<?php endif; ?>
+
+<p><a href="index.php">Back to Dashboard</a></p>
+
 </body>
 </html>
